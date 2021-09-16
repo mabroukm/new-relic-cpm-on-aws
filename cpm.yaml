@@ -1,0 +1,28 @@
+---
+schemaVersion: '2.2'
+description: 'Install CPM on Amazon Linux instances'
+mainSteps:
+  - action: aws:runShellScript
+    name: installNewRelicCPMLinux
+    precondition:
+      StringEquals:
+        - platformType
+        - Linux
+    inputs:
+      runCommand:
+        - echo 'Installing AWS CLI'
+        - sudo yum install -y unzip
+        - sudo curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+        - sudo unzip awscliv2.zip
+        - sudo ./aws/install
+        - echo 'Installing JQ'
+        - sudo yum install -y jq
+        - export INSTANCE_ID=$(curl http://169.254.169.254/latest/meta-data/instance-id)
+        - "[ -z $InstanceID ] && echo InstanceID was retrieved successfully"
+        - export ENV_VAR=$(aws ec2 describe-tags --filters "Name=resource-id,Values=$INSTANCE_ID" --region "ap-southeast-2" | jq -r '.Tags[]|select(.Key=="Environment")|.Value')
+        - "[ -z $InstanceID ] && echo Environment variable was retrieved successfully"
+        - export secretKeyValue=$(aws secretsmanager get-secret-value --secret-id "newrelic/${ENV_VAR}/privatelocation" --region ap-southeast-2 --query SecretString --output text | jq -r .key)
+        - "[ -z $InstanceID ] && echo New Relic API key variable was retrieved successfully"
+        - export IS_RUNNING=$(sudo docker ps --filter ancestor=quay.io/newrelic/synthetics-minion:latest)
+        - "[ -z $IS_RUNNING ] && sudo docker run -d --env MINION_PRIVATE_LOCATION_KEY=$secretKeyValue -v /tmp:/tmp:rw -v /var/run/docker.sock:/var/run/docker.sock:rw quay.io/newrelic/synthetics-minion:latest"
+        
